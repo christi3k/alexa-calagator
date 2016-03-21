@@ -9,7 +9,9 @@
   "author": "Christie Koehler",
   "license": "MIT",
   "dependencies": {
-    "alexa-app": "^2.3.2"
+    "alexa-app": "^2.3.2",
+    "lodash": "^4.6.1",
+    "request-promise": "^2.0.1"
   },
   "devDependencies": {},
   "repository": {

@@ -1,20 +1,33 @@
 var alexa = require('alexa-app');
 var app = new alexa.app('calagator');
+var calagator = require('./calagator_helper.js');
+
 
 app.launch(function(request,response){
-  response.say("Hello from Calagator!");
+  console.log('launch app');
+  // open a user session
+  response.session('open_session', 'true');
+  response.say('Welcome to Calagator. How can I help?');
   response.card("Calagator", "This is an example card with Calagator details.");
+  response.shouldEndSession(false, 'How can I help? For example, ask me what events are happening today, tomorrow, or next week.');
 });
 
-app.intent('numberIntent',
+app.intent('eventsIntent', 
     {
-      "slots":{"number":"NUMBER"}
-        ,"utterances":[ "say the number {1-100|number}" ]
+      "slots":{"Date":"AMAZON.DATE"},
+      "utterances":[ 
+        "{what is|what's} {going on|happening}",
+        "what events are {happening|going on}"
+      ]
     },
     function(request,response) {
-      var number = request.slot('number');
-      response.say("You asked for the number "+number);
+      console.log('[eventsIntent]');
+      var date = request.slot('Date');
+      console.log('requesting date: ' + date);
+      calagator.get_events(response,date);
+      return false;
     }
 );
+
 
 module.exports = app;

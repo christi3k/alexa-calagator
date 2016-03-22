@@ -34,7 +34,7 @@ app.intent('eventsIntent',
       console.log('[eventsIntent]');
       var date = request.slot('Date');
       console.log('requesting date: ' + date);
-      calagator.get_events(response,date);
+      calagator.get_events(request,response);
       return false;
     }
 );

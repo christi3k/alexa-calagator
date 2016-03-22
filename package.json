@@ -10,7 +10,9 @@
   "license": "MIT",
   "dependencies": {
     "alexa-app": "^2.3.2",
+    "dateformat": "^1.0.12",
     "lodash": "^4.6.1",
+    "moment-timezone": "^0.5.2",
     "request-promise": "^2.0.1"
   },
   "devDependencies": {},

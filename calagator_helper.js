@@ -9,26 +9,81 @@ var calagator = {};
 
 calagator.get_events = function(request,response) {
   var date = request.slot('Date');
+  var query = request.slot('Query');
+  //console.log('date: ' + date);
+  //console.log('query: ' + query);
+
+  // if a date isn't provided, assume today
+  if (!date){
+    date = moment().tz('America/Los_Angeles').format('YYYY-MM-DD');
+  }
+
   console.log('requesting date: ' + date);
+  var dateRange = calagator.prepare_date_range(date);
+  //console.log(dateRange);
 
   var options = {
-    uri: CGATOR_EVENTS,
-    qs: {
-      'date[start]': date,
-      'date[end]': date
-    },
     json: true
   };
 
+  // if they've provided a query phrase, use events/search url
+  // and will have to do date filtering server-side, after api results
+  if(query){
+    options.uri = CGATOR_SEARCH;
+    options.qs = {
+      'order': 'date',
+      'query':query,
+      'current':1
+    };
+  } else {
+    options.uri = CGATOR_EVENTS;
+    options.qs = {
+      'date[start]': dateRange.range[0],
+      'date[end]': dateRange.range[1]
+    };
+  }
+  //console.log(options);
+
   rp(options)
     .then(function (events) {
+      // TODO: move processing of speech output to it's own function
+      //console.log('events found: ' + events.length);
+      events = _.orderBy(events,['start_time']);
+      console.log('event count: ' + events.length);
+      events = _.filter(events, function(o) { 
+        return !moment(o.start_time,moment.ISO_8601).tz('America/Los_Angeles').isAfter(moment(dateRange.range[1]).tz('America/Los_Angeles').endOf('day')) && moment(o.start_time,moment.ISO_8601).tz('America/Los_Angeles').isSameOrAfter(moment(dateRange.range[0]).tz('America/Los_Angeles').startOf('day')); 
+      });
+      console.log('event count after filter: ' + events.length);
       response.say('Calagator has ' + events.length + ' events.');
       _.forEach(events, function(anEvent) {
-        response.say("<p><s>" + anEvent.title + " <break strength='medium'/> at "+anEvent.venue.title+" <break strength='medium'/> starting at "+moment(anEvent.start_time).tz('America/Los_Angeles').format('ha')+".</s></p>");
+        // TODO: move dateFormat to dateRange data structure
+        // TODO: add context here so date is more explicit if it's further in future
+        if(dateRange.dateType && dateRange.dateType =='Day') {
+          var dateFormat = 'ha';
+        } else if (dateRange.dateType =='Month'){
+          var dateFormat = 'ha dddd MMMM Do';
+        } else {
+          var dateFormat = 'ha dddd MMMM Do';
+          //var dateFormat = 'ha dddd';
+        }
+        response.say("<p>");
+        response.say("<s>");
+          var title = anEvent.title.replace(/&/, 'and');
+          title = title.replace(/-/,'');
+        response.say(title + " <break strength='medium' /> starting at "+moment(anEvent.start_time).tz('America/Los_Angeles').format(dateFormat));
+        if(anEvent.venue_id){
+          var venue = anEvent.venue.title.replace(/&/, 'and');
+          venue = venue.replace(/-/,'');
+          response.say("<break strength='medium' /> at "+venue);
+          //response.say("<break strength='medium' /> at "+anEvent.venue.title);
+        }
+        response.say("</s>");
+        response.say("</p>");
       });
       response.send();
     })
-    .catch(function () {
+    .catch(function (err) {
+      console.log(err);
       console.log('API call failed');
       response.say("I'm sorry, Calagator is unavailable at the moment.");
       response.send();
@@ -40,7 +95,6 @@ calagator.get_events = function(request,response) {
  * to pass to Calagator API 
  */
 calagator.prepare_date_range = function(date) {
-  var date = '2016-03-22';
   /* date possibilities:
     “today”: 2015-11-24
     “tomorrow”: 2015-11-25
@@ -56,6 +110,7 @@ calagator.prepare_date_range = function(date) {
 
   //fyi: If you want to create a copy and manipulate it, you should use moment#clone before manipulating the moment. More info on cloning.
 
+  // TODO: move def of this data structure outside of this function
   var dateTypes = [
     { dateType:"Day",
       regex:/\d{4}-\d{2}-\d{2}/,
@@ -96,12 +151,9 @@ calagator.prepare_date_range = function(date) {
       }}
   ];
 
-  var date = '201X';
-
   var dateRange = {};
 
   for (var i = 0; i < dateTypes.length; i++) {
-    console.log('loop: ' + i);
     if(date.match(dateTypes[i].regex)){
       dateRange.type = dateTypes[i].dateType;
       dateRange.range = dateTypes[i].transform(date);
@@ -109,6 +161,6 @@ calagator.prepare_date_range = function(date) {
     }
   }
 
-  console.log(dateRange);
+  return dateRange;
 }
 module.exports = calagator;

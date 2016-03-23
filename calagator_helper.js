@@ -10,17 +10,17 @@ var calagator = {};
 calagator.get_events = function(request,response) {
   var date = request.slot('Date');
   var query = request.slot('Query');
-  //console.log('date: ' + date);
-  //console.log('query: ' + query);
+  console.log('date: ' + date);
+  console.log('query: ' + query);
 
   // if a date isn't provided, assume today
   if (!date){
     date = moment().tz('America/Los_Angeles').format('YYYY-MM-DD');
   }
 
-  console.log('requesting date: ' + date);
+  //console.log('requesting date: ' + date);
   var dateRange = calagator.prepare_date_range(date);
-  //console.log(dateRange);
+  console.log(dateRange);
 
   var options = {
     json: true
@@ -42,35 +42,31 @@ calagator.get_events = function(request,response) {
       'date[end]': dateRange.range[1]
     };
   }
-  //console.log(options);
+  console.log(options);
 
   rp(options)
     .then(function (events) {
       // TODO: move processing of speech output to it's own function
       //console.log('events found: ' + events.length);
       events = _.orderBy(events,['start_time']);
+      // TODO adjust for DST non DST
+      var dstOffset = moment().isDST() ? '-07:00' : '-08:00';
+      console.log(dstOffset);
+      var start = dateRange.range[0] + 'T00:00:00' + dstOffset;
+      var end   = dateRange.range[1] + 'T23:59:59' + dstOffset;
       console.log('event count: ' + events.length);
       events = _.filter(events, function(o) { 
-        return !moment(o.start_time,moment.ISO_8601).tz('America/Los_Angeles').isAfter(moment(dateRange.range[1]).tz('America/Los_Angeles').endOf('day')) && moment(o.start_time,moment.ISO_8601).tz('America/Los_Angeles').isSameOrAfter(moment(dateRange.range[0]).tz('America/Los_Angeles').startOf('day')); 
+        return !moment(o.start_time,moment.ISO_8601).isAfter(moment(end)) && moment(o.start_time,moment.ISO_8601).isSameOrAfter(moment(start)); 
       });
       console.log('event count after filter: ' + events.length);
-      response.say('Calagator has ' + events.length + ' events.');
+      response.say('Calagator finds ' + events.length + (query ? ' ' + query : '' ) + (events.length > 1 || events.length == 0 ? ' events' : ' event'));
+      response.say("for the " + dateRange.type + " of " + moment(dateRange.range[0]).format(dateRange.rangeStartFormat));
       _.forEach(events, function(anEvent) {
-        // TODO: move dateFormat to dateRange data structure
-        // TODO: add context here so date is more explicit if it's further in future
-        if(dateRange.dateType && dateRange.dateType =='Day') {
-          var dateFormat = 'ha';
-        } else if (dateRange.dateType =='Month'){
-          var dateFormat = 'ha dddd MMMM Do';
-        } else {
-          var dateFormat = 'ha dddd MMMM Do';
-          //var dateFormat = 'ha dddd';
-        }
         response.say("<p>");
         response.say("<s>");
           var title = anEvent.title.replace(/&/, 'and');
           title = title.replace(/-/,'');
-        response.say(title + " <break strength='medium' /> starting at "+moment(anEvent.start_time).tz('America/Los_Angeles').format(dateFormat));
+        response.say(title + " <break strength='medium' /> starting at "+moment(anEvent.start_time).tz('America/Los_Angeles').format(dateRange.spokenDateFormat));
         if(anEvent.venue_id){
           var venue = anEvent.venue.title.replace(/&/, 'and');
           venue = venue.replace(/-/,'');
@@ -107,60 +103,74 @@ calagator.prepare_date_range = function(date) {
     “next year”: 2016
     “this decade”: 201X
    */ 
-
-  //fyi: If you want to create a copy and manipulate it, you should use moment#clone before manipulating the moment. More info on cloning.
-
-  // TODO: move def of this data structure outside of this function
-  var dateTypes = [
-    { dateType:"Day",
-      regex:/\d{4}-\d{2}-\d{2}/,
-      transform:function(date){ 
-        return [date,date];
-      }},
-    { dateType:"Week" ,
-      regex:/\d{4}-W\d{2}(?!-WE)/,
-      transform:function(date){ 
-        return [moment(date,'YYYY-WW').startOf('isoWeek').format('YYYY-MM-DD'), moment(date,'YYYY-WW').endOf('isoWeek').format('YYYY-MM-DD')];
-      }},
-    { dateType:"Weekend",
-      regex:/\d{4}-W\d{2}-WE/,
-      transform:function(date){ 
-        if(match = date.match(/\d{4}-W\d{1,2}/)){
-          date = match[0];
-        }
-        return [moment(date,'YYYY-WW').endOf('isoWeek').subtract(1,'days').format('YYYY-MM-DD'),moment(date,'YYYY-WW').endOf('isoWeek').format('YYYY-MM-DD')];
-      }},
-    { dateType:"Month",
-      regex:/\d{4}-\d{2}(?!-\d{1,2})/,
-      transform:function(date){ 
-        return [moment(date).startOf('month','YYYY-MM').format('YYYY-MM-DD'), moment(date, 'YYYY-MM').endOf('month').format('YYYY-MM-DD')];
-      }},
-    { dateType:"Year",
-      regex:/\d{4}(?!-W*\d{1,2})/,
-      transform:function(date){ 
-        return [moment(date,'YYYY').startOf('year').format('YYYY-MM-DD'), moment(date,'YYYY').endOf('year').format('YYYY-MM-DD')];
-      }},
-    { dateType:"Decade",
-      regex:/\d{3}X/,
-      transform:function(date){ 
-        // get decade
-        match = date.match(/\d{3}(?=X)/);
-        var start = match[0] + 0;
-        var end = match[0] + 9;
-        return [moment(start,'YYYY').startOf('year').format('YYYY-MM-DD'), moment(end,'YYYY').endOf('year').format('YYYY-MM-DD')];
-      }}
-  ];
-
   var dateRange = {};
 
-  for (var i = 0; i < dateTypes.length; i++) {
-    if(date.match(dateTypes[i].regex)){
-      dateRange.type = dateTypes[i].dateType;
-      dateRange.range = dateTypes[i].transform(date);
+  //console.log(calagator.dateTypes);
+
+  for (var i = 0; i < calagator.dateTypes.length; i++) {
+    //console.log('loop: ' + i);
+    if(date.match(calagator.dateTypes[i].regex)){
+      //console.log('match');
+      dateRange.type = calagator.dateTypes[i].dateType;
+      dateRange.range = calagator.dateTypes[i].transform(date);
+      dateRange.spokenDateFormat = calagator.dateTypes[i].spokenDateFormat;
+      dateRange.rangeStartFormat = calagator.dateTypes[i].rangeStartFormat;
+      //console.log(dateRange);
       break;
     }
   }
-
   return dateRange;
 }
+
+calagator.dateTypes = [
+  { dateType:"Day",
+    regex:/\d{4}-\d{2}-\d{2}/,
+    spokenDateFormat: 'h:mm a',
+    rangeStartFormat: 'MMMM Do',
+    transform:function(date){ 
+      return [date,date];
+    }},
+  { dateType:"Week" ,
+    regex:/\d{4}-W\d{2}(?!-WE)/,
+    spokenDateFormat: 'h:mm a dddd',
+    rangeStartFormat: 'MMMM Do',
+    transform:function(date){ 
+      return [moment(date,'YYYY-WW').startOf('isoWeek').format('YYYY-MM-DD'), moment(date,'YYYY-WW').endOf('isoWeek').format('YYYY-MM-DD')];
+    }},
+  { dateType:"Weekend",
+    regex:/\d{4}-W\d{2}-WE/,
+    spokenDateFormat: 'h:mm a dddd',
+    rangeStartFormat: 'MMMM Do',
+    transform:function(date){ 
+      if(match = date.match(/\d{4}-W\d{1,2}/)){
+        date = match[0];
+      }
+      return [moment(date,'YYYY-WW').endOf('isoWeek').subtract(1,'days').format('YYYY-MM-DD'),moment(date,'YYYY-WW').endOf('isoWeek').format('YYYY-MM-DD')];
+    }},
+  { dateType:"Month",
+    regex:/\d{4}-\d{2}(?!-\d{1,2})/,
+    spokenDateFormat: 'h:mm a dddd [the] Do',
+    rangeStartFormat: 'MMMM',
+    transform:function(date){ 
+      return [moment(date).startOf('month','YYYY-MM').format('YYYY-MM-DD'), moment(date, 'YYYY-MM').endOf('month').format('YYYY-MM-DD')];
+    }},
+  { dateType:"Year",
+    regex:/\d{4}(?!-W*\d{1,2})/,
+    spokenDateFormat: 'h:mm a dddd MMMM Do',
+    rangeStartFormat: 'YYYY',
+    transform:function(date){ 
+      return [moment(date,'YYYY').startOf('year').format('YYYY-MM-DD'), moment(date,'YYYY').endOf('year').format('YYYY-MM-DD')];
+    }},
+  { dateType:"Decade",
+    regex:/\d{3}X/,
+    spokenDateFormat: 'h:mm a dddd MMMM Do',
+    rangeStartFormat: 'YYYY',
+    transform:function(date){ 
+      // get decade
+      match = date.match(/\d{3}(?=X)/);
+      var start = match[0] + 0;
+      var end = match[0] + 9;
+      return [moment(start,'YYYY').startOf('year').format('YYYY-MM-DD'), moment(end,'YYYY').endOf('year').format('YYYY-MM-DD')];
+    }}
+];
 module.exports = calagator;
